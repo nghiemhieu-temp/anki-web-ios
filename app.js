@@ -294,43 +294,109 @@ async function parseApkgFile(file, onProgress) {
   return parsedDeck;
 }
 
-// Template renderer for Anki templates & Cloze deletion
+// Template renderer for Anki templates, Conditionals, Furigana & Cloze deletion
 function renderTemplate(template, fields, modelFields, cardOrd, isBack, frontSideHtml = '') {
   if (!template) return '';
 
   let html = template;
 
-  // Replace {{FrontSide}}
+  // 1. Replace {{FrontSide}}
   if (isBack && frontSideHtml) {
-    // Strip audio from frontside to prevent duplicate autoplay
     const cleanFront = frontSideHtml.replace(/<audio[\s\S]*?<\/audio>/gi, '');
     html = html.replace(/\{\{FrontSide\}\}/gi, cleanFront);
   }
 
-  // Replace field names
+  // 2. Build dictionary of FieldName -> value
+  const fieldDict = {};
   if (modelFields && Array.isArray(modelFields)) {
     modelFields.forEach((fld, idx) => {
-      const val = fields[idx] || '';
-      const regex = new RegExp(`\\{\\{${escapeRegex(fld.name)}\\}\\}`, 'g');
-      html = html.replace(regex, val);
-
-      // Cloze deletion: {{cloze:FieldName}}
-      const clozeRegex = new RegExp(`\\{\\{cloze:${escapeRegex(fld.name)}\\}\\}`, 'g');
-      if (clozeRegex.test(html)) {
-        html = html.replace(clozeRegex, processCloze(val, cardOrd + 1, isBack));
-      }
+      fieldDict[fld.name] = fields[idx] !== undefined ? fields[idx] : '';
     });
   } else {
-    // If no model fields metadata, fallback index replacement
     fields.forEach((val, idx) => {
-      html = html.replace(new RegExp(`\\{\\{Field${idx + 1}\\}\\}`, 'g'), val);
+      fieldDict[`Field${idx + 1}`] = val;
     });
   }
 
-  // Handle general cloze if template didn't use {{cloze:...}}
+  // Helper: check if an Anki field is empty
+  function isFieldEmpty(val) {
+    if (!val) return true;
+    const stripped = val.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+    return stripped.length === 0;
+  }
+
+  // Helper: format Japanese Furigana (e.g. 日本[にほん] -> <ruby>日本<rt>にほん</rt></ruby>)
+  function formatFurigana(text, type) {
+    if (!text || typeof text !== 'string') return '';
+    return text.replace(/ ?([^ >\n\r]+?)\[([^\]\n\r]+?)\]/g, (match, kanji, kana) => {
+      if (type === 'kanji') return kanji;
+      if (type === 'kana') return kana;
+      return `<ruby>${kanji}<rt>${kana}</rt></ruby>`;
+    });
+  }
+
+  // 3. Process Anki Conditionals:
+  // {{#FieldName}}content{{/FieldName}} -> keep content only if field is non-empty
+  // {{^FieldName}}content{{/FieldName}} -> keep content only if field IS empty
+  for (const [name, val] of Object.entries(fieldDict)) {
+    const escapedName = escapeRegex(name);
+    const hasContent = !isFieldEmpty(val);
+
+    // {{#FieldName}}...{{/FieldName}}
+    const condPattern = new RegExp(`\\{\\{#${escapedName}\\}\\}([\\s\\S]*?)\\{\\{/${escapedName}\\}\\}`, 'g');
+    html = html.replace(condPattern, (m, inner) => {
+      return hasContent ? inner : '';
+    });
+
+    // {{^FieldName}}...{{/FieldName}}
+    const invCondPattern = new RegExp(`\\{\\{\\^${escapedName}\\}\\}([\\s\\S]*?)\\{\\{/${escapedName}\\}\\}`, 'g');
+    html = html.replace(invCondPattern, (m, inner) => {
+      return !hasContent ? inner : '';
+    });
+  }
+
+  // 4. Process Field Modifiers & Replacements
+  for (const [name, rawVal] of Object.entries(fieldDict)) {
+    const escapedName = escapeRegex(name);
+    const val = rawVal || '';
+
+    // Cloze deletion: {{cloze:FieldName}}
+    const clozeRegex = new RegExp(`\\{\\{cloze:${escapedName}\\}\\}`, 'g');
+    html = html.replace(clozeRegex, processCloze(val, cardOrd + 1, isBack));
+
+    // {{furigana:FieldName}}
+    const furiRegex = new RegExp(`\\{\\{furigana:${escapedName}\\}\\}`, 'g');
+    html = html.replace(furiRegex, formatFurigana(val, 'ruby'));
+
+    // {{kanji:FieldName}}
+    const kanjiRegex = new RegExp(`\\{\\{kanji:${escapedName}\\}\\}`, 'g');
+    html = html.replace(kanjiRegex, formatFurigana(val, 'kanji'));
+
+    // {{kana:FieldName}}
+    const kanaRegex = new RegExp(`\\{\\{kana:${escapedName}\\}\\}`, 'g');
+    html = html.replace(kanaRegex, formatFurigana(val, 'kana'));
+
+    // {{text:FieldName}}
+    const textRegex = new RegExp(`\\{\\{text:${escapedName}\\}\\}`, 'g');
+    html = html.replace(textRegex, val.replace(/<[^>]*>/g, ''));
+
+    // {{hint:FieldName}}
+    const hintRegex = new RegExp(`\\{\\{hint:${escapedName}\\}\\}`, 'g');
+    html = html.replace(hintRegex, isFieldEmpty(val) ? '' : `<details class="hint-details"><summary>Gợi ý (${name})</summary><div>${val}</div></details>`);
+
+    // Standard {{FieldName}} (also supports ruby furigana if syntax exists)
+    const standardRegex = new RegExp(`\\{\\{${escapedName}\\}\\}`, 'g');
+    html = html.replace(standardRegex, formatFurigana(val, 'ruby'));
+  }
+
+  // 5. Standalone cloze if template didn't use {{cloze:...}}
   if (html.includes('{{c')) {
     html = processCloze(html, cardOrd + 1, isBack);
   }
+
+  // 6. Clean up any remaining unparsed tags (e.g. {{#...}}, {{/...}}, {{...}})
+  html = html.replace(/\{\{[#^/][^}]+\}\}/g, '');
+  html = html.replace(/\{\{[a-zA-Z0-9_:#\^/ \-]+?\}\}/g, '');
 
   return html;
 }
@@ -393,6 +459,11 @@ async function prepareCardMedia(htmlContent, deckId) {
       }
     }
   }
+
+  // 3. Fallback cleanup for cards containing legacy unparsed template tags
+  processed = processed.replace(/\{\{#[^}]+\}\}\s*\{\{\/[^}]+\}\}/g, '');
+  processed = processed.replace(/\{\{[#^/][^}]+\}\}/g, '');
+  processed = processed.replace(/\{\{[a-zA-Z0-9_:#\^/ \-]+?\}\}/g, '');
 
   return processed;
 }
@@ -725,6 +796,13 @@ function setupEventListeners() {
   DOM.btnBack.addEventListener('click', showDecksView);
 
   // File Upload (.apkg)
+  DOM.dropZone.addEventListener('click', (e) => {
+    // Kích hoạt mở file picker trực tiếp trên iOS
+    if (e.target !== DOM.apkgInput) {
+      DOM.apkgInput.click();
+    }
+  });
+
   DOM.apkgInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
