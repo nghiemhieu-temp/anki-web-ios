@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+  <!-- Card Back -->
+  <rect x="140" y="110" width="240" height="300" rx="24" fill="#ffffff" opacity="0.3" transform="rotate(12 260 260)"/>
+  <!-- Card Front -->
+  <g filter="url(#shadow)">
+    <rect x="136" y="106" width="240" height="300" rx="24" fill="#ffffff"/>
+    <!-- Star on Card -->
+    <path d="M256 180 L273 226 L322 228 L283 257 L297 304 L256 276 L215 304 L229 257 L190 228 L239 226 Z" fill="#2563eb"/>
+    <!-- Text Lines -->
+    <rect x="176" y="325" width="160" height="12" rx="6" fill="#cbd5e1"/>
+    <rect x="196" y="350" width="120" height="10" rx="5" fill="#e2e8f0"/>
+  </g>
+</svg>
