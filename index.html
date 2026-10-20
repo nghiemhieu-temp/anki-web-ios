@@ -56,9 +56,9 @@
 
       <!-- Import Section -->
       <section class="import-section">
-        <label for="apkg-input" class="upload-box" id="drop-zone">
-          <!-- Bỏ accept hạn chế để iOS Safari không làm mờ (gray out) file .apkg trong app Tệp -->
-          <input type="file" id="apkg-input" class="file-input-hidden">
+        <div class="upload-box" id="drop-zone">
+          <!-- Input phủ kín toàn bộ khung, accept="*/*" để iOS không khóa đuôi .apkg -->
+          <input type="file" id="apkg-input" accept="*/*" class="file-input-overlay" aria-label="Tải lên file Anki .apkg">
           <div class="upload-icon-wrap">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -67,10 +67,10 @@
             </svg>
           </div>
           <div class="upload-text">
-            <strong>Chọn file .apkg từ iPhone / Máy tính</strong>
-            <span>Hỗ trợ file Anki có ảnh và âm thanh</span>
+            <strong>Bấm vào đây để chọn file .apkg</strong>
+            <span>Chọn từ ứng dụng "Tệp" (Files) trên iPhone</span>
           </div>
-        </label>
+        </div>
 
         <button id="btn-load-demo" class="btn-demo">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

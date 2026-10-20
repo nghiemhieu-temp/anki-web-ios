@@ -160,11 +160,14 @@ async function getSqlInstance() {
 // APKG Unpacker & Anki Database Parser
 // ==========================================================================
 async function parseApkgFile(file, onProgress) {
-  onProgress(10, 'Đang giải nén tập tin .apkg...');
-  const zip = await JSZip.loadAsync(file);
+  onProgress(10, 'Đang nạp dữ liệu từ iPhone...');
+  const arrayBuffer = await file.arrayBuffer();
 
-  // 1. Locate Anki SQLite database file
-  let dbFile = zip.file('collection.anki21') || zip.file('collection.anki2');
+  onProgress(25, 'Đang giải nén tập tin .apkg...');
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  // 1. Locate Anki SQLite database file (ưu tiên collection.anki2 vì anki21 có thể bị nén zstandard)
+  let dbFile = zip.file('collection.anki2') || zip.file('collection.anki21');
   if (!dbFile) {
     // Check if files are nested in a folder
     const files = Object.keys(zip.files);
@@ -795,14 +798,7 @@ function setupEventListeners() {
   // Navigation
   DOM.btnBack.addEventListener('click', showDecksView);
 
-  // File Upload (.apkg)
-  DOM.dropZone.addEventListener('click', (e) => {
-    // Kích hoạt mở file picker trực tiếp trên iOS
-    if (e.target !== DOM.apkgInput) {
-      DOM.apkgInput.click();
-    }
-  });
-
+  // File Upload (.apkg) - Input đã phủ kín khung nên bắt sự kiện change trực tiếp
   DOM.apkgInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;

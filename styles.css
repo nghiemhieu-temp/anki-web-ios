@@ -201,15 +201,17 @@ body {
 }
 
 .upload-box {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 18px;
   border-radius: 18px;
   background: var(--bg-card);
-  border: 2px dashed rgba(59, 130, 246, 0.4);
+  border: 2px dashed rgba(59, 130, 246, 0.45);
   cursor: pointer;
   transition: all 0.2s ease;
+  overflow: hidden;
 }
 
 .upload-box:active {
@@ -218,15 +220,17 @@ body {
   background: var(--bg-card-elevated);
 }
 
-.file-input-hidden {
+/* Phủ toàn bộ input lên trên khung để người dùng chạm vào bất cứ đâu cũng kích hoạt native file picker của iOS */
+.file-input-overlay {
   position: absolute;
   top: 0;
   left: 0;
-  width: 1px;
-  height: 1px;
-  opacity: 0.001;
-  pointer-events: none;
-  z-index: -1;
+  width: 100%;
+  height: 100%;
+  opacity: 0.0001;
+  cursor: pointer;
+  z-index: 10;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .upload-icon-wrap {
