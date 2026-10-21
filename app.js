@@ -14,7 +14,9 @@ const state = {
   currentIndex: 0,          // Current card index in active queue
   isFlipped: false,         // Flip state
   mediaBlobUrls: new Map(), // deckId:filename -> objectUrl
-  countdownTimerId: null    // Realtime countdown timer ticker ID
+  countdownTimerId: null,   // Realtime countdown timer ticker ID
+  totalSessionCards: 0,     // Total cards in current session
+  sessionCompletedCount: 0  // Cards reviewed in current session
 };
 
 // ==========================================================================
@@ -700,6 +702,8 @@ async function showStudyView(deck, mode = 'due') {
   DOM.studyProgressBar.classList.remove('hidden');
   DOM.studyCompleted.classList.add('hidden');
 
+  state.totalSessionCards = state.cards.length;
+  state.sessionCompletedCount = 0;
   state.currentIndex = 0;
   state.isFlipped = false;
   renderCurrentCard();
@@ -789,16 +793,20 @@ async function renderCurrentCard() {
   state.isFlipped = false;
   DOM.flashcard.classList.remove('flipped');
 
-  // Cập nhật thanh tiến độ
-  const currentNum = state.currentIndex + 1;
-  const total = state.cards.length;
+  // Cập nhật thanh tiến độ phiên học
+  const total = state.totalSessionCards || (state.cards.length + state.sessionCompletedCount);
+  const currentNum = Math.min(state.sessionCompletedCount + 1, total);
   DOM.studyCounter.textContent = `${currentNum} / ${total}`;
-  DOM.progressFill.style.width = `${Math.round((currentNum / total) * 100)}%`;
+  DOM.progressFill.style.width = `${Math.round((state.sessionCompletedCount / total) * 100)}%`;
 
-  // Thống kê thẻ
-  const newCount = state.cards.filter(c => c.state === 'new').length;
-  const learnCount = state.cards.filter(c => c.state === 'learn').length;
-  const revCount = state.cards.filter(c => c.state === 'rev').length;
+  // Thống kê thẻ Realtime toàn bộ bộ thẻ:
+  // - Xanh dương (Mới): số thẻ mới chưa học
+  // - Vàng (Đang học / Khó): số thẻ đánh giá Học lại / Khó
+  // - Xanh lá (Ôn tập / Đã thuộc): số thẻ đánh giá Thường / Dễ
+  const all = state.allCards || state.cards;
+  const newCount = all.filter(c => c.state === 'new').length;
+  const learnCount = all.filter(c => c.state === 'learn').length;
+  const revCount = all.filter(c => c.state === 'rev').length;
   DOM.statNew.textContent = newCount;
   DOM.statLearn.textContent = learnCount;
   DOM.statRev.textContent = revCount;
@@ -894,7 +902,10 @@ async function handleRating(rating) {
   card.reps = (card.reps || 0) + 1;
   await updateCardInDB(card);
 
-  // Thẻ đã hẹn lịch sau (1, 3, 5 ngày) -> loại khỏi hàng chờ học hiện tại
+  // Ghi nhận hoàn thành 1 thẻ trong phiên học hiện tại
+  state.sessionCompletedCount++;
+
+  // Thẻ đã hẹn lịch sau (hôm sau, 3 ngày, 5 ngày) -> loại khỏi hàng chờ học hiện tại
   state.cards.splice(state.currentIndex, 1);
 
   if (state.cards.length === 0) {
