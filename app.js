@@ -5,14 +5,16 @@
 
 // Global State
 const state = {
-  db: null,              // IndexedDB instance
-  sqlModule: null,       // SQL.js instance
-  decks: [],             // All saved decks
-  activeDeck: null,      // Current deck being studied
-  cards: [],             // Cards of current deck
-  currentIndex: 0,       // Current card index
-  isFlipped: false,      // Flip state
-  mediaBlobUrls: new Map() // deckId:filename -> objectUrl
+  db: null,                 // IndexedDB instance
+  sqlModule: null,          // SQL.js instance
+  decks: [],                // All saved decks
+  activeDeck: null,         // Current deck being studied
+  allCards: [],             // All cards of current deck
+  cards: [],                // Cards due right now in study queue
+  currentIndex: 0,          // Current card index in active queue
+  isFlipped: false,         // Flip state
+  mediaBlobUrls: new Map(), // deckId:filename -> objectUrl
+  countdownTimerId: null    // Realtime countdown timer ticker ID
 };
 
 // ==========================================================================
@@ -112,6 +114,39 @@ function deleteDeckFromDB(deckId) {
 
     tx.oncomplete = () => resolve();
     tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function updateCardInDB(card) {
+  return new Promise((resolve, reject) => {
+    const tx = state.db.transaction('cards', 'readwrite');
+    const store = tx.objectStore('cards');
+    store.put(card);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function resetDeckProgressInDB(deckId) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const cards = await loadCardsForDeckFromDB(deckId);
+      const tx = state.db.transaction('cards', 'readwrite');
+      const store = tx.objectStore('cards');
+      cards.forEach(card => {
+        card.due = 0;
+        card.state = 'new';
+        card.ivl = 0;
+        card.reps = 0;
+        card.lapses = 0;
+        card.lastReviewed = null;
+        store.put(card);
+      });
+      tx.oncomplete = () => resolve(cards.length);
+      tx.onerror = (e) => reject(e.target.error);
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -556,6 +591,7 @@ const DOM = {
   viewStudy: document.getElementById('view-study'),
   btnBack: document.getElementById('btn-back'),
   appTitle: document.getElementById('app-title'),
+  btnResetDeck: document.getElementById('btn-reset-deck'),
   btnPwaGuide: document.getElementById('btn-pwa-guide'),
 
   // Deck Screen elements
@@ -569,17 +605,20 @@ const DOM = {
   studyDeckName: document.getElementById('study-deck-name'),
   studyCounter: document.getElementById('study-counter'),
   progressFill: document.getElementById('progress-fill'),
+  studyProgressBar: document.querySelector('.study-progress-bar'),
   statNew: document.getElementById('stat-new'),
   statLearn: document.getElementById('stat-learn'),
   statRev: document.getElementById('stat-rev'),
 
   // Card elements
+  cardStage: document.getElementById('card-stage'),
   flashcard: document.getElementById('flashcard'),
   cardFrontContent: document.getElementById('card-front-content'),
   cardBackContent: document.getElementById('card-back-content'),
   cardTagsBadge: document.getElementById('card-tags-badge'),
 
   // Controls
+  bottomActionBar: document.querySelector('.bottom-action-bar'),
   actionShowAnswer: document.getElementById('action-show-answer'),
   actionRatingGroup: document.getElementById('action-rating-group'),
   btnShowAnswer: document.getElementById('btn-show-answer'),
@@ -587,6 +626,17 @@ const DOM = {
   btnFlipCard: document.getElementById('btn-flip-card'),
   btnShuffleDeck: document.getElementById('btn-shuffle-deck'),
   btnNextCard: document.getElementById('btn-next-card'),
+
+  // Completion / Realtime Waiting Screen
+  studyCompleted: document.getElementById('study-completed'),
+  countdownTimer: document.getElementById('countdown-timer'),
+  countdownDate: document.getElementById('countdown-date'),
+  srsDue1d: document.getElementById('srs-due-1d'),
+  srsDue3d: document.getElementById('srs-due-3d'),
+  srsDue5d: document.getElementById('srs-due-5d'),
+  btnResetCompleted: document.getElementById('btn-reset-completed'),
+  btnCramStudy: document.getElementById('btn-cram-study'),
+  btnBackToDecks: document.getElementById('btn-back-to-decks'),
 
   // Modals
   modalLoading: document.getElementById('modal-loading'),
@@ -600,35 +650,133 @@ const DOM = {
 
 // Switch Views
 function showDecksView() {
+  stopCountdownTicker();
   DOM.viewStudy.classList.remove('active');
   DOM.viewDecks.classList.add('active');
   DOM.btnBack.classList.add('hidden');
+  DOM.btnResetDeck.classList.add('hidden');
   DOM.appTitle.textContent = 'Anki Web iOS';
   state.activeDeck = null;
   refreshDecksList();
 }
 
-async function showStudyView(deck) {
+async function showStudyView(deck, mode = 'due') {
+  stopCountdownTicker();
   state.activeDeck = deck;
   DOM.viewDecks.classList.remove('active');
   DOM.viewStudy.classList.add('active');
   DOM.btnBack.classList.remove('hidden');
+  DOM.btnResetDeck.classList.remove('hidden');
   DOM.appTitle.textContent = deck.name;
   DOM.studyDeckName.textContent = deck.name;
 
   showLoading('Đang tải thẻ học...', 'Vui lòng chờ...');
-  state.cards = await loadCardsForDeckFromDB(deck.id);
+  state.allCards = await loadCardsForDeckFromDB(deck.id);
   hideLoading();
 
-  if (!state.cards || state.cards.length === 0) {
+  if (!state.allCards || state.allCards.length === 0) {
     alert('Bộ thẻ này không có dữ liệu thẻ!');
     showDecksView();
     return;
   }
 
+  const now = Date.now();
+  if (mode === 'due') {
+    // Chỉ lấy thẻ mới hoặc thẻ đã đến hạn ôn tập (realtime)
+    state.cards = state.allCards.filter(c => c.state === 'new' || !c.due || c.due <= now);
+  } else {
+    // Ôn tập sớm (Cram mode): Học toàn bộ tất cả thẻ
+    state.cards = [...state.allCards];
+  }
+
+  if (state.cards.length === 0) {
+    showCompletedView();
+    return;
+  }
+
+  // Khôi phục giao diện lật thẻ (nếu trước đó đang hiển thị màn hình hoàn thành)
+  DOM.cardStage.classList.remove('hidden');
+  DOM.bottomActionBar.classList.remove('hidden');
+  DOM.studyProgressBar.classList.remove('hidden');
+  DOM.studyCompleted.classList.add('hidden');
+
   state.currentIndex = 0;
   state.isFlipped = false;
   renderCurrentCard();
+}
+
+function showCompletedView() {
+  stopCountdownTicker();
+
+  // Ẩn vùng học thẻ, hiện màn hình hoàn thành
+  DOM.cardStage.classList.add('hidden');
+  DOM.bottomActionBar.classList.add('hidden');
+  DOM.studyProgressBar.classList.add('hidden');
+  DOM.studyCompleted.classList.remove('hidden');
+
+  const allCards = state.allCards || [];
+  const now = Date.now();
+  const futureCards = allCards.filter(c => c.due && c.due > now);
+
+  // Thống kê phân loại thẻ theo thời gian hẹn
+  const due1d = allCards.filter(c => c.ivl === 1).length;
+  const due3d = allCards.filter(c => c.ivl === 3).length;
+  const due5d = allCards.filter(c => c.ivl === 5).length;
+
+  DOM.srsDue1d.textContent = due1d;
+  DOM.srsDue3d.textContent = due3d;
+  DOM.srsDue5d.textContent = due5d;
+
+  if (futureCards.length > 0) {
+    const nextDue = Math.min(...futureCards.map(c => c.due));
+    startCountdownTicker(nextDue);
+  } else {
+    DOM.countdownTimer.textContent = 'Hoàn tất';
+    DOM.countdownDate.textContent = 'Tất cả thẻ đã được ôn tập xong!';
+  }
+}
+
+// Bộ đếm thời gian Realtime lùi từng giây
+function startCountdownTicker(targetTimestamp) {
+  stopCountdownTicker();
+
+  function updateClock() {
+    const now = Date.now();
+    const diff = targetTimestamp - now;
+
+    if (diff <= 0) {
+      DOM.countdownTimer.textContent = '00:00:00';
+      DOM.countdownDate.textContent = '⚡ Đã có thẻ đến hạn ôn tập! Bấm bên dưới để học ngay.';
+      stopCountdownTicker();
+      return;
+    }
+
+    const days = Math.floor(diff / (24 * 3600 * 1000));
+    const hours = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
+    const minutes = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
+    const seconds = Math.floor((diff % (60 * 1000)) / 1000);
+
+    const pad = (n) => String(n).padStart(2, '0');
+
+    if (days > 0) {
+      DOM.countdownTimer.textContent = `${days} ngày ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    } else {
+      DOM.countdownTimer.textContent = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    const dueDateObj = new Date(targetTimestamp);
+    DOM.countdownDate.textContent = `Hẹn lúc ${dueDateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày ${dueDateObj.toLocaleDateString('vi-VN')}`;
+  }
+
+  updateClock();
+  state.countdownTimerId = setInterval(updateClock, 1000);
+}
+
+function stopCountdownTicker() {
+  if (state.countdownTimerId) {
+    clearInterval(state.countdownTimerId);
+    state.countdownTimerId = null;
+  }
 }
 
 async function renderCurrentCard() {
@@ -641,13 +789,13 @@ async function renderCurrentCard() {
   state.isFlipped = false;
   DOM.flashcard.classList.remove('flipped');
 
-  // Update Progress & Counters
+  // Cập nhật thanh tiến độ
   const currentNum = state.currentIndex + 1;
   const total = state.cards.length;
   DOM.studyCounter.textContent = `${currentNum} / ${total}`;
   DOM.progressFill.style.width = `${Math.round((currentNum / total) * 100)}%`;
 
-  // Stats badge
+  // Thống kê thẻ
   const newCount = state.cards.filter(c => c.state === 'new').length;
   const learnCount = state.cards.filter(c => c.state === 'learn').length;
   const revCount = state.cards.filter(c => c.state === 'rev').length;
@@ -658,11 +806,11 @@ async function renderCurrentCard() {
   // Tags
   DOM.cardTagsBadge.textContent = card.tags && card.tags.length ? card.tags.join(', ') : '';
 
-  // Render Front & Back HTML with media blob injection
+  // Render Front & Back HTML
   DOM.cardFrontContent.innerHTML = await prepareCardMedia(card.front, card.deckId);
   DOM.cardBackContent.innerHTML = await prepareCardMedia(card.back, card.deckId);
 
-  // Toggle buttons
+  // Nút hiển thị
   DOM.actionShowAnswer.classList.remove('hidden');
   DOM.actionRatingGroup.classList.add('hidden');
 }
@@ -680,38 +828,107 @@ function flipCard() {
   }
 }
 
-// Spaced Repetition (SRS) response handler
-function handleRating(rating) {
-  // rating: 1 = Again, 2 = Hard, 3 = Good, 4 = Easy
+// Tính mốc thời gian ôn tập chuẩn Anki:
+// - Khó: sang ngày hôm sau (bắt đầu từ 04:00 sáng mai)
+// - Thường: 3 ngày sau (04:00 sáng sau 3 ngày)
+// - Dễ: 5 ngày sau (04:00 sáng sau 5 ngày)
+function calculateNextDueDate(daysAhead) {
+  const now = new Date();
+  const d = new Date();
+  // Nếu học đêm khuya trước 4h sáng, coi như phiên học của ngày hôm trước
+  if (now.getHours() < 4) {
+    d.setDate(d.getDate() + (daysAhead - 1));
+  } else {
+    d.setDate(d.getDate() + daysAhead);
+  }
+  // Mốc bắt đầu ngày học mới là 04:00 sáng để sáng ngủ dậy là có thẻ học
+  d.setHours(4, 0, 0, 0);
+  return d.getTime();
+}
+
+// Xử lý đánh giá SRS Realtime (Khó -> hôm sau, Thường -> 3 ngày sau, Dễ -> 5 ngày sau)
+async function handleRating(rating) {
+  // rating: 1 = Học lại (< 1 phút), 2 = Khó (Hôm sau), 3 = Thường (3 ngày sau), 4 = Dễ (5 ngày sau)
   const card = state.cards[state.currentIndex];
+  const now = Date.now();
 
   if (rating === 1) {
+    // Học lại: hẹn 1 phút, đưa về cuối danh sách trong phiên học
     card.state = 'learn';
-    // If Again: place card at end of review session
-    const [retryingCard] = state.cards.splice(state.currentIndex, 1);
-    state.cards.push(retryingCard);
-    renderCurrentCard();
+    card.ivl = 0;
+    card.due = now + 60 * 1000;
+    card.reps = (card.reps || 0) + 1;
+    await updateCardInDB(card);
+
+    if (state.cards.length > 1) {
+      const [retryingCard] = state.cards.splice(state.currentIndex, 1);
+      state.cards.push(retryingCard);
+      renderCurrentCard();
+    } else {
+      // Chỉ còn 1 thẻ duy nhất: lật lại mặt trước để học lại
+      state.isFlipped = false;
+      DOM.flashcard.classList.remove('flipped');
+      DOM.actionShowAnswer.classList.remove('hidden');
+      DOM.actionRatingGroup.classList.add('hidden');
+    }
     return;
   }
 
   if (rating === 2) {
+    // Khó: sang ngày hôm sau (04:00 sáng mai)
     card.state = 'learn';
-  } else if (rating >= 3) {
+    card.ivl = 1;
+    card.due = calculateNextDueDate(1);
+  } else if (rating === 3) {
+    // Thường: 3 ngày sau (04:00 sáng sau 3 ngày)
     card.state = 'rev';
+    card.ivl = 3;
+    card.due = calculateNextDueDate(3);
+  } else if (rating === 4) {
+    // Dễ: 5 ngày sau (04:00 sáng sau 5 ngày)
+    card.state = 'rev';
+    card.ivl = 5;
+    card.due = calculateNextDueDate(5);
   }
 
-  // Move to next card
-  if (state.currentIndex < state.cards.length - 1) {
-    state.currentIndex++;
-    renderCurrentCard();
+  card.reps = (card.reps || 0) + 1;
+  await updateCardInDB(card);
+
+  // Thẻ đã hẹn lịch sau (1, 3, 5 ngày) -> loại khỏi hàng chờ học hiện tại
+  state.cards.splice(state.currentIndex, 1);
+
+  if (state.cards.length === 0) {
+    showCompletedView();
   } else {
-    // Finished session
-    alert('🎉 Chúc mừng! Bạn đã hoàn thành tất cả các thẻ trong phiên học này.');
-    showDecksView();
+    if (state.currentIndex >= state.cards.length) {
+      state.currentIndex = state.cards.length - 1;
+    }
+    renderCurrentCard();
   }
 }
 
-// Refresh deck list on home screen
+// Hàm Đặt lại tiến độ (Reset thời gian)
+async function confirmAndResetDeck(deckId, deckName = '') {
+  const name = deckName || (state.activeDeck ? state.activeDeck.name : '');
+  const msg = name 
+    ? `Bạn có chắc muốn đặt lại toàn bộ thời gian học của bộ thẻ "${name}"?\n\nTất cả thẻ sẽ trở về trạng thái mới để bạn học lại từ đầu ngay lập tức.`
+    : `Bạn có chắc muốn đặt lại toàn bộ thời gian học của bộ thẻ này để học lại từ đầu không?`;
+
+  if (confirm(msg)) {
+    showLoading('Đang đặt lại tiến độ...', 'Vui lòng chờ...');
+    const count = await resetDeckProgressInDB(deckId);
+    hideLoading();
+    alert(`✅ Đã đặt lại thời gian học thành công cho ${count} thẻ!`);
+
+    if (state.activeDeck && state.activeDeck.id === deckId) {
+      await showStudyView(state.activeDeck, 'due');
+    } else {
+      await refreshDecksList();
+    }
+  }
+}
+
+// Refresh deck list on home screen (Hiển thị thẻ Cần học vs Đang chờ)
 async function refreshDecksList() {
   state.decks = await loadAllDecksFromDB();
   DOM.deckCountBadge.textContent = `${state.decks.length} bộ thẻ`;
@@ -728,19 +945,30 @@ async function refreshDecksList() {
     return;
   }
 
-  state.decks.forEach(deck => {
+  const now = Date.now();
+  for (const deck of state.decks) {
+    const cards = await loadCardsForDeckFromDB(deck.id);
+    const dueCount = cards.filter(c => c.state === 'new' || !c.due || c.due <= now).length;
+    const waitingCount = cards.length - dueCount;
+
     const cardEl = document.createElement('div');
     cardEl.className = 'deck-item-card';
     cardEl.innerHTML = `
       <div class="deck-item-info">
         <span class="deck-item-name">${escapeHtml(deck.name)}</span>
         <div class="deck-item-meta">
-          <span>📚 ${deck.cardCount || 0} thẻ</span>
-          <span>• ${new Date(deck.createdAt).toLocaleDateString('vi-VN')}</span>
+          <span>📚 ${deck.cardCount || cards.length} thẻ</span>
+          ${dueCount > 0 ? `<span class="deck-meta-pill deck-meta-due">⚡ ${dueCount} cần học</span>` : ''}
+          ${waitingCount > 0 ? `<span class="deck-meta-pill deck-meta-wait">⏳ ${waitingCount} đang chờ</span>` : ''}
         </div>
       </div>
       <div class="deck-item-actions">
-        <button class="btn-deck-study">Học ngay</button>
+        <button class="btn-deck-study">${dueCount > 0 ? `Học ngay (${dueCount})` : 'Ôn tập'}</button>
+        <button class="btn-deck-reset" title="Đặt lại thời gian học (Reset)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+        </button>
         <button class="btn-deck-delete" title="Xóa bộ thẻ">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -752,7 +980,12 @@ async function refreshDecksList() {
 
     cardEl.querySelector('.btn-deck-study').addEventListener('click', (e) => {
       e.stopPropagation();
-      showStudyView(deck);
+      showStudyView(deck, 'due');
+    });
+
+    cardEl.querySelector('.btn-deck-reset').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await confirmAndResetDeck(deck.id, deck.name);
     });
 
     cardEl.querySelector('.btn-deck-delete').addEventListener('click', async (e) => {
@@ -763,9 +996,9 @@ async function refreshDecksList() {
       }
     });
 
-    cardEl.addEventListener('click', () => showStudyView(deck));
+    cardEl.addEventListener('click', () => showStudyView(deck, 'due'));
     DOM.decksContainer.appendChild(cardEl);
-  });
+  }
 }
 
 function escapeHtml(text) {
@@ -797,6 +1030,28 @@ function hideLoading() {
 function setupEventListeners() {
   // Navigation
   DOM.btnBack.addEventListener('click', showDecksView);
+
+  // Reset thời gian bộ thẻ khi đang học
+  DOM.btnResetDeck.addEventListener('click', () => {
+    if (state.activeDeck) {
+      confirmAndResetDeck(state.activeDeck.id, state.activeDeck.name);
+    }
+  });
+
+  // Nút hành động trên màn hình Hoàn thành / Chờ ôn tập
+  DOM.btnResetCompleted.addEventListener('click', () => {
+    if (state.activeDeck) {
+      confirmAndResetDeck(state.activeDeck.id, state.activeDeck.name);
+    }
+  });
+
+  DOM.btnCramStudy.addEventListener('click', () => {
+    if (state.activeDeck) {
+      showStudyView(state.activeDeck, 'all');
+    }
+  });
+
+  DOM.btnBackToDecks.addEventListener('click', showDecksView);
 
   // File Upload (.apkg) - Input đã phủ kín khung nên bắt sự kiện change trực tiếp
   DOM.apkgInput.addEventListener('change', async (e) => {

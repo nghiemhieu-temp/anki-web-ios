@@ -395,6 +395,25 @@ body {
   background: rgba(239, 68, 68, 0.25);
 }
 
+.btn-deck-reset {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-deck-reset:active {
+  background: rgba(245, 158, 11, 0.25);
+  transform: scale(0.92);
+}
+
 .empty-state {
   text-align: center;
   padding: 40px 20px;
@@ -809,6 +828,186 @@ rt {
 .btn-subtle:active {
   transform: scale(0.96);
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ==========================================================================
+   Realtime Completed / Waiting Screen
+   ========================================================================== */
+.completed-container {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0;
+  width: 100%;
+}
+
+.completed-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 24px 18px;
+  text-align: center;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.completed-icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.completed-card h3 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.completed-card p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.countdown-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 18px;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.countdown-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #93c5fd;
+  letter-spacing: 0.06em;
+}
+
+.countdown-timer {
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, #60a5fa, #38bdf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.countdown-date {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.srs-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.status-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.status-num {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.status-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.completed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn-action-warning {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  padding: 13px 16px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-action-warning:active {
+  transform: scale(0.97);
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.btn-action-primary {
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  padding: 13px 16px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-action-primary:active {
+  transform: scale(0.97);
+  background: var(--accent-blue-hover);
+}
+
+.btn-action-subtle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.deck-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.deck-meta-due {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.deck-meta-wait {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
 }
 
 /* ==========================================================================

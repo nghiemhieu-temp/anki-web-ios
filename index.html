@@ -34,6 +34,11 @@
         <span id="app-title" class="brand-title">Anki Web iOS</span>
       </div>
       <div class="header-right">
+        <button id="btn-reset-deck" class="icon-btn hidden" title="Đặt lại thời gian học (Reset)" aria-label="Đặt lại thời gian học">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+        </button>
         <button id="btn-pwa-guide" class="icon-btn" title="Cài đặt trên iPhone" aria-label="Hướng dẫn cài đặt">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
@@ -116,7 +121,7 @@
       </div>
 
       <!-- Flashcard Interactive Zone -->
-      <div class="card-stage">
+      <div id="card-stage" class="card-stage">
         <div id="flashcard" class="flashcard">
           <!-- Front Face -->
           <div class="card-face card-front">
@@ -147,6 +152,54 @@
         </div>
       </div>
 
+      <!-- Realtime Completion / Waiting View -->
+      <div id="study-completed" class="completed-container hidden">
+        <div class="completed-card">
+          <div class="completed-icon">🎉</div>
+          <h3>Đã hoàn thành phiên học!</h3>
+          <p id="completed-subtitle">Tất cả các thẻ cần học lúc này đã được ôn tập xong.</p>
+
+          <div class="countdown-card">
+            <span class="countdown-label">LẦN ÔN TẬP TIẾP THEO SAU:</span>
+            <div id="countdown-timer" class="countdown-timer">00:00:00</div>
+            <div id="countdown-date" class="countdown-date">Đang tính thời gian...</div>
+          </div>
+
+          <div class="srs-status-grid">
+            <div class="status-box">
+              <span class="status-num" id="srs-due-1d">0</span>
+              <span class="status-label">Khó (Hôm sau)</span>
+            </div>
+            <div class="status-box">
+              <span class="status-num" id="srs-due-3d">0</span>
+              <span class="status-label">Thường (3 ngày sau)</span>
+            </div>
+            <div class="status-box">
+              <span class="status-num" id="srs-due-5d">0</span>
+              <span class="status-label">Dễ (5 ngày sau)</span>
+            </div>
+          </div>
+
+          <div class="completed-actions">
+            <button id="btn-reset-completed" class="btn-action-warning">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+              <span>Đặt lại thời gian (Học lại từ đầu)</span>
+            </button>
+            <button id="btn-cram-study" class="btn-action-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Ôn tập sớm (Học ngay không đợi)</span>
+            </button>
+            <button id="btn-back-to-decks" class="btn-action-subtle">
+              <span>← Về danh sách bộ thẻ</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Bottom Action Bar (iPhone Thumb Zone) -->
       <div class="bottom-action-bar">
         <!-- Before Flip: Show Answer Button -->
@@ -164,15 +217,15 @@
             <span class="rate-label">Học lại</span>
           </button>
           <button class="btn-rate btn-hard" data-rating="2">
-            <span class="rate-time">1 ngày</span>
+            <span class="rate-time">Hôm sau</span>
             <span class="rate-label">Khó</span>
           </button>
           <button class="btn-rate btn-good" data-rating="3">
-            <span class="rate-time">3 ngày</span>
-            <span class="rate-label">Tốt</span>
+            <span class="rate-time">3 ngày sau</span>
+            <span class="rate-label">Thường</span>
           </button>
           <button class="btn-rate btn-easy" data-rating="4">
-            <span class="rate-time">5 ngày</span>
+            <span class="rate-time">5 ngày sau</span>
             <span class="rate-label">Dễ</span>
           </button>
         </div>
